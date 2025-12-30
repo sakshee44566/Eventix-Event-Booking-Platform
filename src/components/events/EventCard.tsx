@@ -13,9 +13,11 @@ interface EventCardProps {
 export function EventCard({ event, featured = false }: EventCardProps) {
   const category = categories.find((c) => c.id === event.category);
   const availabilityPercent = (event.availableTickets / event.totalTickets) * 100;
+  // Normalize ID: use _id from database or id from static data
+  const eventId = (event as any)._id || event.id;
 
   return (
-    <Link to={`/events/${event.id}`} className="h-full flex">
+    <Link to={`/events/${eventId}`} className="h-full flex">
       <motion.article
         whileHover={{ y: -4 }}
         className={cn(
@@ -74,7 +76,7 @@ export function EventCard({ event, featured = false }: EventCardProps) {
               {event.title}
             </h3>
             <p className="text-sm text-muted-foreground line-clamp-2">
-              {event.shortDescription}
+              {event.shortDescription || event.description?.substring(0, 100) || ''}
             </p>
           </div>
 

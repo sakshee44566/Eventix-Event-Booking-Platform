@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
   Calendar, Clock, MapPin, Users, Share2, Heart, 
   Minus, Plus, ChevronRight, Check, Star, Wifi,
-  ArrowLeft
+  ArrowLeft, Loader2
 } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
@@ -12,27 +12,150 @@ import { Badge } from '@/components/ui/badge';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { events, categories } from '@/lib/data';
+import { eventsApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+
+interface EventData {
+  _id?: string;
+  id?: string;
+  title: string;
+  description: string;
+  shortDescription?: string;
+  category: string;
+  date: string;
+  time: string;
+  endTime: string;
+  location: string;
+  venue: string;
+  city: string;
+  image: string;
+  organizer: string;
+  organizerLogo?: string;
+  price: number;
+  currency?: string;
+  availableTickets: number;
+  totalTickets: number;
+  isFeatured?: boolean;
+  isOnline?: boolean;
+  tags?: string[];
+  ticketTiers: Array<{
+    _id?: string;
+    id?: string;
+    name: string;
+    price: number;
+    description: string;
+    available: number;
+    total?: number;
+    perks?: string[];
+  }>;
+}
 
 export default function EventDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
   
-  const event = events.find((e) => e.id === id);
-  const [selectedTier, setSelectedTier] = useState(event?.ticketTiers[0]?.id || '');
+  const [event, setEvent] = useState<EventData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedTier, setSelectedTier] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [isLiked, setIsLiked] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(
-    event ? new Date(event.date) : undefined
-  );
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
 
-  if (!event) {
+  useEffect(() => {
+    const fetchEvent = async () => {
+      if (!id) {
+        setError('Event ID is required');
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        setError(null);
+        
+        // Try to fetch from API first
+        const response = await eventsApi.getById(id) as any;
+        
+        if (response.success && response.data) {
+          const eventData = response.data;
+          
+          // Normalize the event data: convert _id to id, normalize ticket tiers
+          const normalizedEvent: EventData = {
+            ...eventData,
+            id: eventData._id || eventData.id,
+            ticketTiers: (eventData.ticketTiers || []).map((tier: any) => ({
+              ...tier,
+              id: tier._id || tier.id || `tier-${Math.random()}`,
+            })),
+            shortDescription: eventData.shortDescription || eventData.description?.substring(0, 100) || '',
+            tags: eventData.tags || [],
+            currency: eventData.currency || 'USD',
+            isOnline: eventData.isOnline || false,
+            isFeatured: eventData.isFeatured || false,
+          };
+          
+          setEvent(normalizedEvent);
+          
+          // Set default selected tier
+          if (normalizedEvent.ticketTiers.length > 0) {
+            setSelectedTier(normalizedEvent.ticketTiers[0].id || '');
+          }
+          
+          // Set selected date
+          if (normalizedEvent.date) {
+            setSelectedDate(new Date(normalizedEvent.date));
+          }
+        } else {
+          // Fallback to static data if API doesn't return success
+          const staticEvent = events.find((e) => e.id === id);
+          if (staticEvent) {
+            setEvent(staticEvent as any);
+            setSelectedTier(staticEvent.ticketTiers[0]?.id || '');
+            setSelectedDate(new Date(staticEvent.date));
+          } else {
+            setError('Event not found');
+          }
+        }
+      } catch (err: any) {
+        console.error('Error fetching event:', err);
+        
+        // Fallback to static data on error
+        const staticEvent = events.find((e) => e.id === id);
+        if (staticEvent) {
+          setEvent(staticEvent as any);
+          setSelectedTier(staticEvent.ticketTiers[0]?.id || '');
+          setSelectedDate(new Date(staticEvent.date));
+        } else {
+          setError(err.message || 'Failed to load event');
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchEvent();
+  }, [id]);
+
+  if (isLoading) {
+    return (
+      <Layout>
+        <div className="container py-20 text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+          <p className="text-muted-foreground">Loading event...</p>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (error || !event) {
     return (
       <Layout>
         <div className="container py-20 text-center">
           <h1 className="text-2xl font-bold mb-4">Event not found</h1>
+          <p className="text-muted-foreground mb-6">{error || 'The event you are looking for does not exist.'}</p>
           <Link to="/events">
             <Button>Browse Events</Button>
           </Link>
